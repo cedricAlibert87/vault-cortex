@@ -29,10 +29,66 @@ describe("createEmbedder", () => {
   })
 
   // Import inside the test so the mock is active
-  const loadEmbedder = async () => {
+  const loadEmbedder = async (options?: import("../embedder.js").EmbedderOptions) => {
     const { createEmbedder } = await import("../embedder.js")
-    return createEmbedder(logger)
+    return createEmbedder(logger, options)
   }
+
+  describe("options", () => {
+    it("exposes the default model, dimensions and a signature covering both", async () => {
+      const embedder = await loadEmbedder()
+      expect({
+        model: embedder.model,
+        dimensions: embedder.dimensions,
+        signature: embedder.signature,
+      }).toEqual({
+        model: "Xenova/bge-small-en-v1.5",
+        dimensions: 384,
+        signature: "Xenova/bge-small-en-v1.5|384|",
+      })
+    })
+
+    it("loads the configured model and reports it", async () => {
+      const transformers = await import("@huggingface/transformers")
+      const mockedPipeline = vi.mocked(transformers.pipeline)
+      const embedder = await loadEmbedder({ model: "Xenova/multilingual-e5-small" })
+      await embedder.embedText("bonjour")
+
+      expect(mockedPipeline).toHaveBeenCalledWith(
+        "feature-extraction",
+        "Xenova/multilingual-e5-small",
+        expect.objectContaining({ dtype: "q8" }),
+      )
+    })
+
+    it("prepends the passage prefix to chunks and the query prefix to queries", async () => {
+      const transformers = await import("@huggingface/transformers")
+      const mockedPipeline = vi.mocked(transformers.pipeline)
+      const embedder = await loadEmbedder({ queryPrefix: "query: ", passagePrefix: "passage: " })
+      await embedder.embedText("un chunk")
+      await embedder.embedQuery("une question")
+      await embedder.embedBatch(["a", "b"])
+      const pipe = await mockedPipeline.mock.results[0]?.value
+
+      expect(vi.mocked(pipe).mock.calls.map((call) => call[0])).toEqual([
+        "passage: un chunk",
+        "query: une question",
+        ["passage: a", "passage: b"],
+      ])
+    })
+
+    it("includes the passage prefix in the signature, since it changes every stored vector", async () => {
+      const embedder = await loadEmbedder({ passagePrefix: "passage: " })
+      expect(embedder.signature).toBe("Xenova/bge-small-en-v1.5|384|passage: ")
+    })
+
+    it("rejects a model whose output width differs from the configured dimensions", async () => {
+      const embedder = await loadEmbedder({ dimensions: 768 })
+      await expect(embedder.embedText("hello")).rejects.toThrow(
+        "embedding model Xenova/bge-small-en-v1.5 returned 384 dimensions, expected 768 (EMBEDDING_DIMENSIONS)",
+      )
+    })
+  })
 
   describe("embedText", () => {
     it("returns a Float32Array with the correct dimensions", async () => {

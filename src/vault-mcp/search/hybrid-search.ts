@@ -73,7 +73,7 @@ const embedQuery = async (
 
   if (!embedder) return null
   try {
-    const queryEmbedding = await embedder.embedText(query)
+    const queryEmbedding = await embedder.embedQuery(query)
     return Buffer.from(queryEmbedding.buffer, queryEmbedding.byteOffset, queryEmbedding.byteLength)
   } catch (error) {
     logger.warn("query embedding failed", { error: describeError(error) })

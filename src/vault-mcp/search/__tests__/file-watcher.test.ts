@@ -24,6 +24,7 @@ import { readdirOrNull, statOrNull } from "../../../utils/fs.js"
 import type { SearchIndex } from "../search-index.js"
 import { watchVaultAndBuildIndex } from "../file-watcher.js"
 import { logger } from "../../../logger.js"
+import { stubEmbedder } from "./stub-embedder.js"
 
 // Auto-spy chokidar: spy: true keeps the real implementation, so the
 // integration tests below watch real temp dirs, while the "watch options" suite
@@ -667,7 +668,7 @@ describe("file watcher — obsolete events and embedding queues", () => {
     const modelEntered = Promise.withResolvers<undefined>()
     const releaseModel = Promise.withResolvers<Float32Array>()
     const modelFinished = Promise.withResolvers<undefined>()
-    const embedder = {
+    const embedder = stubEmbedder({
       embedText: vi
         .fn()
         .mockResolvedValueOnce(vector)
@@ -676,7 +677,7 @@ describe("file watcher — obsolete events and embedding queues", () => {
           return releaseModel.promise
         }),
       embedBatch: vi.fn(async (texts: readonly string[]) => texts.map(() => vector)),
-    }
+    })
     const { testVault, search, database, fire } = await createControlledWatcher(embedder)
     const canvasContent = (text: string): string =>
       JSON.stringify({
@@ -1191,7 +1192,7 @@ describe("file watcher — obsolete events and embedding queues", () => {
       const finalEntered = Promise.withResolvers<undefined>()
       const releaseFinal = Promise.withResolvers<Float32Array>()
       const vector = new Float32Array(384).fill(0.1)
-      const embedder = {
+      const embedder = stubEmbedder({
         embedText: vi.fn(async (text: string) => {
           if (text === `${prefix}\n\noldquartz`) {
             firstEntered.resolve(undefined)
@@ -1208,7 +1209,7 @@ describe("file watcher — obsolete events and embedding queues", () => {
           return vector
         }),
         embedBatch: vi.fn(async (texts: readonly string[]) => texts.map(() => vector)),
-      }
+      })
       const { testVault, database, search, fire } = await createControlledWatcher(embedder)
       const filePath = join(testVault, fileName)
       const sourceWritten = Promise.withResolvers<undefined>()
@@ -1317,7 +1318,7 @@ describe("file watcher — obsolete events and embedding queues", () => {
     const recoveredFinished = Promise.withResolvers<undefined>()
     const failureLogged = Promise.withResolvers<undefined>()
     const vector = new Float32Array(384).fill(0.1)
-    const embedder = {
+    const embedder = stubEmbedder({
       embedText: vi.fn(async (text: string) => {
         if (text === "content\n\noldquartz") {
           failingEntered.resolve(undefined)
@@ -1330,7 +1331,7 @@ describe("file watcher — obsolete events and embedding queues", () => {
         return vector
       }),
       embedBatch: vi.fn(async (texts: readonly string[]) => texts.map(() => vector)),
-    }
+    })
     const { testVault, database, search, fire } = await createControlledWatcher(embedder)
     const realEmbed = search.embedFileContent
     vi.spyOn(search, "embedFileContent").mockImplementation(async (params, requestLogger) => {
@@ -1384,7 +1385,7 @@ describe("file watcher — obsolete events and embedding queues", () => {
     const recoveredEntered = Promise.withResolvers<undefined>()
     const releaseRecovered = Promise.withResolvers<Float32Array>()
     const vector = new Float32Array(384).fill(0.1)
-    const embedder = {
+    const embedder = stubEmbedder({
       embedText: vi.fn(async (text: string) => {
         if (text === "note\n\noldquartz") {
           failingEntered.resolve(undefined)
@@ -1397,7 +1398,7 @@ describe("file watcher — obsolete events and embedding queues", () => {
         return vector
       }),
       embedBatch: vi.fn(async (texts: readonly string[]) => texts.map(() => vector)),
-    }
+    })
     const { testVault, database, search, fire } = await createControlledWatcher(embedder)
     const sourceWritten = Promise.withResolvers<undefined>()
     const realUpsert = search.upsertNote
@@ -2003,13 +2004,13 @@ describe("watchVaultAndBuildIndex — changes during startup", () => {
 
   it("reports a note embedding that fails during the batch once, with no unhandled rejection", async () => {
     const vector = new Float32Array(384).fill(0.1)
-    const embedder = {
+    const embedder = stubEmbedder({
       embedText: vi.fn(async (text: string) => {
         if (text === "failing\n\nfailingtext") throw new Error("controlled model failure")
         return vector
       }),
       embedBatch: vi.fn(async (texts: readonly string[]) => texts.map(() => vector)),
-    }
+    })
     const { testVault, search, fire, startup, finishRebuild } = await createControlledStartup({
       embedder,
     })
@@ -2044,7 +2045,7 @@ describe("watchVaultAndBuildIndex — changes during startup", () => {
   it("lets startup finish while held paths' embeddings are still running", async () => {
     const vector = new Float32Array(384).fill(0.1)
     const modelReady = Promise.withResolvers<undefined>()
-    const embedder = {
+    const embedder = stubEmbedder({
       embedText: vi.fn(async () => {
         await modelReady.promise
         return vector
@@ -2053,7 +2054,7 @@ describe("watchVaultAndBuildIndex — changes during startup", () => {
         await modelReady.promise
         return texts.map(() => vector)
       }),
-    }
+    })
     const { testVault, search, database, fire, startup, finishRebuild } =
       await createControlledStartup({ embedder })
     await writeFile(join(testVault, "note.md"), "pendingopal\n")

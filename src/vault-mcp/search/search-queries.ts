@@ -424,7 +424,7 @@ const memoryVectorSearch = async (
 ): Promise<MemoryEntryVectorHitRow[]> => {
   if (!memory.embedder || !memory.knnStmt) return []
   try {
-    const queryEmbedding = await memory.embedder.embedText(query)
+    const queryEmbedding = await memory.embedder.embedQuery(query)
     // k over-fetches at twice the window, then the slice truncates after the
     // statement's ORDER BY secondary keys apply — so entries tied at the
     // window boundary resolve by (file, entry_index) instead of vec0's scan

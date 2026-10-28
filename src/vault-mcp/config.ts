@@ -7,6 +7,9 @@ import { momentToLuxonFormat, findUnsupportedTokens } from "./obsidian-markdown/
 import { logger } from "../logger.js"
 import { isToolName } from "./mcp-core/tool-registry.js"
 import type { ToolName } from "./mcp-core/tool-registry.js"
+import { DEFAULT_EMBEDDING_MODEL, EMBEDDING_DIMENSIONS } from "./search/embedder.js"
+import { DEFAULT_RERANK_MODEL } from "./search/reranker.js"
+import { DEFAULT_FTS_TOKENIZER } from "./search/fts-query.js"
 
 // ── Validation ─────────────────────────────────────────────────
 
@@ -146,6 +149,23 @@ export type VaultConfig = Readonly<{
    *  "none" skips reranking entirely — no model download, RRF-only ordering.
    *  Only takes effect when embeddingEnabled is true. */
   rerankMode: "none" | "blended"
+  /** Hugging Face id of the bi-encoder used for vector search. The default is
+   *  English-only; a multilingual model such as Xenova/multilingual-e5-small
+   *  serves vaults written in other languages. Changing it rebuilds every
+   *  stored vector at the next startup. */
+  embeddingModel: string
+  /** Output width of embeddingModel; the vec0 tables are declared with it. */
+  embeddingDimensions: number
+  /** Prefixes some models expect on each side ("query: " / "passage: " for the
+   *  E5 family). Empty for bge-small-en. */
+  embeddingQueryPrefix: string
+  embeddingPassagePrefix: string
+  /** Hugging Face id of the cross-encoder used when rerankMode is "blended". */
+  rerankModel: string
+  /** FTS5 tokenizer clause for the keyword tables. The default stems English
+   *  (Porter); "unicode61 remove_diacritics 2" suits other languages. Changing
+   *  it rebuilds the keyword tables at the next startup. */
+  ftsTokenizer: string
   /** "Windows mode": the vault is bind-mounted from a Windows drive into Docker
    *  Desktop, so it crosses the Docker Desktop ↔ WSL2 bridge. Enables filesystem
    *  polling for the watcher (inotify doesn't cross the bridge) and a
@@ -236,6 +256,30 @@ export const loadConfig = (env: Record<string, string | undefined> = process.env
     .enum(["none", "blended"])
     .parse(envVar.from(env).get("RERANK_MODE").default("blended").asString())
 
+  const embeddingModel = envVar
+    .from(env)
+    .get("EMBEDDING_MODEL")
+    .default(DEFAULT_EMBEDDING_MODEL)
+    .asString()
+  const embeddingDimensions = envVar
+    .from(env)
+    .get("EMBEDDING_DIMENSIONS")
+    .default(String(EMBEDDING_DIMENSIONS))
+    .asIntPositive()
+  const embeddingQueryPrefix = envVar.from(env).get("EMBEDDING_QUERY_PREFIX").default("").asString()
+  const embeddingPassagePrefix = envVar
+    .from(env)
+    .get("EMBEDDING_PASSAGE_PREFIX")
+    .default("")
+    .asString()
+  const rerankModel = envVar.from(env).get("RERANK_MODEL").default(DEFAULT_RERANK_MODEL).asString()
+  // The clause is interpolated into CREATE VIRTUAL TABLE … fts5(…, tokenize='…'),
+  // so only the characters FTS5 tokenizer specs use are admitted.
+  const ftsTokenizer = z
+    .string()
+    .regex(/^[a-z0-9_ ]+$/i, "FTS_TOKENIZER accepts letters, digits, spaces and underscores only")
+    .parse(envVar.from(env).get("FTS_TOKENIZER").default(DEFAULT_FTS_TOKENIZER).asString().trim())
+
   const windowsBindMount = envVar.from(env).get("WINDOWS_MODE").default("false").asBool()
 
   // env-var's asIntPositive admits 0, but a zero byte cap would make every
@@ -310,6 +354,12 @@ export const loadConfig = (env: Record<string, string | undefined> = process.env
     serviceDocumentationUrl,
     embeddingEnabled,
     rerankMode,
+    embeddingModel,
+    embeddingDimensions: requireNonZero("EMBEDDING_DIMENSIONS", embeddingDimensions),
+    embeddingQueryPrefix,
+    embeddingPassagePrefix,
+    rerankModel,
+    ftsTokenizer,
     windowsBindMount,
     maxFileBytes,
     maxImageOutputBytes,

@@ -3,7 +3,13 @@
 import type { Logger } from "../../logger.js"
 import { describeError } from "../../utils/describe-error.js"
 
-const RERANKER_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2"
+export const DEFAULT_RERANK_MODEL = "Xenova/ms-marco-MiniLM-L-6-v2"
+
+export type RerankerOptions = {
+  /** Hugging Face id of a sequence-classification cross-encoder that
+   *  transformers.js can run (ONNX weights, q8 variant available). */
+  model?: string
+}
 
 // ── Factory ───────────────────────────────────────────────────
 
@@ -11,12 +17,14 @@ export type Reranker = ReturnType<typeof createReranker>
 
 /** Lazy-loading cross-encoder reranker for query-document relevance scoring.
  *
- *  Factory-closure pattern: `createReranker(logger)` returns the rerank API.
+ *  Factory-closure pattern: `createReranker(logger, options)` returns the rerank API.
  *  The model is downloaded on first use and cached by the transformers library.
  *  Uses `AutoModelForSequenceClassification` + `AutoTokenizer` (not the
  *  `pipeline()` API) because text-classification pipelines do not support
  *  the `text_pair` tokenizer input needed for cross-encoder scoring. */
-export const createReranker = (logger: Logger) => {
+export const createReranker = (logger: Logger, options?: RerankerOptions) => {
+  const rerankModel = options?.model ?? DEFAULT_RERANK_MODEL
+
   type TransformersModule = typeof import("@huggingface/transformers")
   type TokenizerInstance = Awaited<
     ReturnType<TransformersModule["AutoTokenizer"]["from_pretrained"]>
@@ -47,11 +55,11 @@ export const createReranker = (logger: Logger) => {
         const { AutoTokenizer, AutoModelForSequenceClassification } =
           await import("@huggingface/transformers")
         const [loadedTokenizer, loadedModel] = await Promise.all([
-          AutoTokenizer.from_pretrained(RERANKER_MODEL),
+          AutoTokenizer.from_pretrained(rerankModel),
           // INT8 quantization — halves model size (~20MB vs ~80MB) with
           // negligible quality loss for cross-encoders (full-attention
           // pair scoring is robust to reduced precision).
-          AutoModelForSequenceClassification.from_pretrained(RERANKER_MODEL, {
+          AutoModelForSequenceClassification.from_pretrained(rerankModel, {
             dtype: "q8",
             // Pin ONNX to 1 thread — ms-marco-MiniLM is scored one pair at
             // a time and is too small for intra-op parallelism to help.
@@ -62,7 +70,7 @@ export const createReranker = (logger: Logger) => {
         ])
         const elapsedMs = Math.round(performance.now() - startMs)
         logger.info("reranker model loaded", {
-          model: RERANKER_MODEL,
+          model: rerankModel,
           elapsedMs,
         })
         tokenizer = loadedTokenizer
@@ -70,7 +78,7 @@ export const createReranker = (logger: Logger) => {
         return { tokenizer: loadedTokenizer, model: loadedModel }
       } catch (error) {
         logger.warn("reranker model failed to load", {
-          model: RERANKER_MODEL,
+          model: rerankModel,
           error: describeError(error),
         })
         // Allow retry on next call (e.g. transient network failure during download)

@@ -31,6 +31,10 @@ const COMPOUND_JOINER_RUN_REGEX = new RegExp(`${COMPOUND_JOINER_CHARACTER}+`, "g
  *  quotes, lone operators) into token separators so it never reaches FTS5. */
 const ASCII_PUNCTUATION_REGEX = /[!-/:-@[-^`{-~]/g
 
+/** FTS5 tokenizer clause the keyword tables are created with: Porter stemming
+ *  over unicode61 — English-oriented (see FTS_TOKENIZER for other languages). */
+export const DEFAULT_FTS_TOKENIZER = "porter unicode61"
+
 /** Matches control characters (Unicode category Cc). FTS5 rejects most ASCII
  *  ones, NUL even inside a quoted phrase; the unicode61 tokenizer splits
  *  indexed text at all of them, just as at a space. */

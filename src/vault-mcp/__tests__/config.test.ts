@@ -411,6 +411,63 @@ describe("loadConfig", () => {
     })
   })
 
+  describe("search model settings", () => {
+    it("defaults to the shipped English models, 384 dimensions, no prefixes and Porter stemming", () => {
+      const config = loadConfig(EMPTY_ENV)
+      expect({
+        embeddingModel: config.embeddingModel,
+        embeddingDimensions: config.embeddingDimensions,
+        embeddingQueryPrefix: config.embeddingQueryPrefix,
+        embeddingPassagePrefix: config.embeddingPassagePrefix,
+        rerankModel: config.rerankModel,
+        ftsTokenizer: config.ftsTokenizer,
+      }).toEqual({
+        embeddingModel: "Xenova/bge-small-en-v1.5",
+        embeddingDimensions: 384,
+        embeddingQueryPrefix: "",
+        embeddingPassagePrefix: "",
+        rerankModel: "Xenova/ms-marco-MiniLM-L-6-v2",
+        ftsTokenizer: "porter unicode61",
+      })
+    })
+
+    it("reads a multilingual configuration", () => {
+      const config = loadConfig({
+        EMBEDDING_MODEL: "Xenova/multilingual-e5-small",
+        EMBEDDING_DIMENSIONS: "384",
+        EMBEDDING_QUERY_PREFIX: "query: ",
+        EMBEDDING_PASSAGE_PREFIX: "passage: ",
+        RERANK_MODEL: "Xenova/bge-reranker-base",
+        FTS_TOKENIZER: " unicode61 remove_diacritics 2 ",
+      })
+      expect({
+        embeddingModel: config.embeddingModel,
+        embeddingDimensions: config.embeddingDimensions,
+        embeddingQueryPrefix: config.embeddingQueryPrefix,
+        embeddingPassagePrefix: config.embeddingPassagePrefix,
+        rerankModel: config.rerankModel,
+        ftsTokenizer: config.ftsTokenizer,
+      }).toEqual({
+        embeddingModel: "Xenova/multilingual-e5-small",
+        embeddingDimensions: 384,
+        embeddingQueryPrefix: "query: ",
+        embeddingPassagePrefix: "passage: ",
+        rerankModel: "Xenova/bge-reranker-base",
+        ftsTokenizer: "unicode61 remove_diacritics 2",
+      })
+    })
+
+    it("rejects zero dimensions", () => {
+      expect(() => loadConfig({ EMBEDDING_DIMENSIONS: "0" })).toThrow(/EMBEDDING_DIMENSIONS/)
+    })
+
+    it("rejects a tokenizer clause with characters FTS5 specs never use", () => {
+      expect(() => loadConfig({ FTS_TOKENIZER: "unicode61'); DROP TABLE notes; --" })).toThrow(
+        /FTS_TOKENIZER/,
+      )
+    })
+  })
+
   describe("MEMORY_ENABLED", () => {
     it("defaults to true when unset", () => {
       const config = loadConfig(EMPTY_ENV)

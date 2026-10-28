@@ -7,6 +7,7 @@ import * as sqliteVec from "sqlite-vec"
 vi.mock("sqlite-vec", { spy: true })
 import { createSearchIndex } from "../search-index.js"
 import { logger } from "../../../logger.js"
+import { stubEmbedder } from "./stub-embedder.js"
 
 /** Read-only inspection connection — needs the vec extension loaded so the
  *  memory_entry_vectors virtual table is queryable from outside the factory. */
@@ -19,12 +20,13 @@ const openInspectConnection = (dbPath: string): Database.Database => {
 const DIMENSIONS = 384
 
 /** Creates a mock embedder that returns deterministic embeddings. */
-const createMockEmbedder = () => ({
-  embedText: vi.fn().mockResolvedValue(new Float32Array(DIMENSIONS).fill(0.1)),
-  embedBatch: vi.fn(async (texts: readonly string[]): Promise<Float32Array[]> => {
-    return texts.map(() => new Float32Array(DIMENSIONS).fill(0.1))
-  }),
-})
+const createMockEmbedder = () =>
+  stubEmbedder({
+    embedText: vi.fn().mockResolvedValue(new Float32Array(DIMENSIONS).fill(0.1)),
+    embedBatch: vi.fn(async (texts: readonly string[]): Promise<Float32Array[]> => {
+      return texts.map(() => new Float32Array(DIMENSIONS).fill(0.1))
+    }),
+  })
 
 /** Builds a fileStat object for upsertNote. Defaults to size 100. */
 const testStat = (mtimeMs: number, size = 100): { mtimeMs: number; size: number } => ({

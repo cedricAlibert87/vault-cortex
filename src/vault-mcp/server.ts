@@ -130,15 +130,27 @@ const startServer = async (): Promise<void> => {
     memoryDir: config.memoryDir,
     embeddingEnabled: config.embeddingEnabled,
     rerankMode: config.rerankMode,
+    embeddingModel: config.embeddingModel,
+    rerankModel: config.rerankModel,
+    ftsTokenizer: config.ftsTokenizer,
     windowsBindMount: config.windowsBindMount,
     trustProxyHops: config.trustProxyHops,
     trustForwardedHops: config.trustForwardedHops,
     trashRetentionDays: config.trashRetentionDays ?? "none",
   })
 
-  const embedder = config.embeddingEnabled ? createEmbedder(logger) : undefined
+  const embedder = config.embeddingEnabled
+    ? createEmbedder(logger, {
+        model: config.embeddingModel,
+        dimensions: config.embeddingDimensions,
+        queryPrefix: config.embeddingQueryPrefix,
+        passagePrefix: config.embeddingPassagePrefix,
+      })
+    : undefined
   const reranker =
-    config.embeddingEnabled && config.rerankMode === "blended" ? createReranker(logger) : undefined
+    config.embeddingEnabled && config.rerankMode === "blended"
+      ? createReranker(logger, { model: config.rerankModel })
+      : undefined
   // The status registry is captured at boot so listings and writes classify
   // with one map; format and date toggles are read live per task write.
   const { statusRegistry } = await readTaskFormatConfig(vaultPath, logger)
@@ -146,6 +158,7 @@ const startServer = async (): Promise<void> => {
     memoryDir: config.memoryEnabled ? config.memoryDir : undefined,
     fileToolsEnabled: config.fileToolsEnabled,
     statusRegistry,
+    ftsTokenizer: config.ftsTokenizer,
   })
 
   // Before the watcher starts, so its template writes are not held and re-read.

@@ -13,6 +13,7 @@ import type { StatusClassification } from "../../obsidian-markdown/tasks.js"
 import { logger } from "../../../logger.js"
 import { statOrNull } from "../../../utils/fs.js"
 import { extractPdfText } from "../../obsidian-markdown/pdf.js"
+import { stubEmbedder } from "./stub-embedder.js"
 
 vi.mock("node:fs/promises", { spy: true })
 vi.mock("../../../utils/fs.js", { spy: true })
@@ -87,12 +88,12 @@ const seedEmbeddingSource = (
 const createEmbeddingRaceIndex = async (sourceKind: "note" | "file") => {
   const dir = await mkdtemp(join(tmpdir(), "embedding-race-"))
   onTestFinished(() => rm(dir, { recursive: true, force: true }))
-  const embedder = {
+  const embedder = stubEmbedder({
     embedText: vi.fn().mockResolvedValue(new Float32Array(384).fill(0.1)),
     embedBatch: vi.fn().mockImplementation((texts: string[]) => {
       return Promise.resolve(texts.map(() => new Float32Array(384).fill(0.1)))
     }),
-  }
+  })
   const dbPath = join(dir, "index.db")
   const searchIndex = createSearchIndex(dbPath, embedder, undefined, { fileToolsEnabled: true })
   const inspect = new Database(dbPath)
@@ -555,12 +556,13 @@ describe("equal-score tie-breaking in retrieval legs", () => {
   })
 
   /** Every text embeds to the same vector, so all KNN distances tie. */
-  const createUniformEmbedder = () => ({
-    embedText: vi.fn().mockResolvedValue(new Float32Array(384).fill(0.1)),
-    embedBatch: vi.fn().mockImplementation((texts: string[]) => {
-      return Promise.resolve(texts.map(() => new Float32Array(384).fill(0.1)))
-    }),
-  })
+  const createUniformEmbedder = () =>
+    stubEmbedder({
+      embedText: vi.fn().mockResolvedValue(new Float32Array(384).fill(0.1)),
+      embedBatch: vi.fn().mockImplementation((texts: string[]) => {
+        return Promise.resolve(texts.map(() => new Float32Array(384).fill(0.1)))
+      }),
+    })
 
   it("orders tied-distance note vector hits by path regardless of insertion order", async () => {
     const tieIndex = createSearchIndex(":memory:", createUniformEmbedder())
@@ -4212,12 +4214,12 @@ describe("rebuildFromVault", () => {
     const dbDir = await mkdtemp(join(tmpdir(), "rebuild-keep-failed-"))
     onTestFinished(() => rm(dbDir, { recursive: true, force: true }))
     const dbPath = join(dbDir, "index.db")
-    const embedder = {
+    const embedder = stubEmbedder({
       embedText: vi.fn().mockResolvedValue(new Float32Array(384).fill(0.1)),
       embedBatch: vi.fn().mockImplementation((texts: string[]) => {
         return Promise.resolve(texts.map(() => new Float32Array(384).fill(0.1)))
       }),
-    }
+    })
     const memoryIndex = createSearchIndex(dbPath, embedder, undefined, { memoryDir: "About Me" })
     const inspect = new Database(dbPath, { readonly: true })
     sqliteVec.load(inspect)
@@ -6150,12 +6152,13 @@ describe("vaultStats", () => {
 describe("embedding pipeline", () => {
   const DIMENSIONS = 384
 
-  const createMockEmbedder = () => ({
-    embedText: vi.fn().mockResolvedValue(new Float32Array(DIMENSIONS).fill(0.1)),
-    embedBatch: vi.fn().mockImplementation((texts: string[]) => {
-      return Promise.resolve(texts.map(() => new Float32Array(DIMENSIONS).fill(0.1)))
-    }),
-  })
+  const createMockEmbedder = () =>
+    stubEmbedder({
+      embedText: vi.fn().mockResolvedValue(new Float32Array(DIMENSIONS).fill(0.1)),
+      embedBatch: vi.fn().mockImplementation((texts: string[]) => {
+        return Promise.resolve(texts.map(() => new Float32Array(DIMENSIONS).fill(0.1)))
+      }),
+    })
 
   const NOTE_FOR_EMBEDDING = `---
 title: Test Note
@@ -7881,10 +7884,10 @@ describe("committed embedding source versions", () => {
     const vaultPath = join(dir, "vault")
     await mkdir(vaultPath)
     await writeFile(join(vaultPath, "new.md"), "New successfully parsed source.")
-    const embedder = {
+    const embedder = stubEmbedder({
       embedText: vi.fn().mockResolvedValue(new Float32Array(384).fill(0.1)),
       embedBatch: vi.fn().mockResolvedValue([]),
-    }
+    })
     const index = createSearchIndex(join(dir, "index.db"), embedder, undefined, {
       memoryDir: "About Me",
     })
@@ -7940,14 +7943,14 @@ describe("committed embedding source versions", () => {
       join(vaultPath, "About Me/Practices.md"),
       "## Practices\n\n- **2026-07-01**: Keep current entries.",
     )
-    const embedder = {
+    const embedder = stubEmbedder({
       embedText: vi.fn().mockResolvedValue(new Float32Array(384).fill(0.1)),
       embedBatch: vi
         .fn()
         .mockImplementation((texts: string[]) =>
           Promise.resolve(texts.map(() => new Float32Array(384).fill(0.1))),
         ),
-    }
+    })
     const dbPath = join(dir, "index.db")
     const index = createSearchIndex(dbPath, embedder, undefined, {
       fileToolsEnabled: true,
@@ -8062,12 +8065,13 @@ describe("committed embedding source versions", () => {
 
 describe("file content vector embeddings", () => {
   const DIMENSIONS = 384
-  const createMockEmbedder = () => ({
-    embedText: vi.fn().mockResolvedValue(new Float32Array(DIMENSIONS).fill(0.1)),
-    embedBatch: vi.fn().mockImplementation((texts: string[]) => {
-      return Promise.resolve(texts.map(() => new Float32Array(DIMENSIONS).fill(0.1)))
-    }),
-  })
+  const createMockEmbedder = () =>
+    stubEmbedder({
+      embedText: vi.fn().mockResolvedValue(new Float32Array(DIMENSIONS).fill(0.1)),
+      embedBatch: vi.fn().mockImplementation((texts: string[]) => {
+        return Promise.resolve(texts.map(() => new Float32Array(DIMENSIONS).fill(0.1)))
+      }),
+    })
 
   const TEXT_FILE_CONTENT = "System design overview with diagrams and architecture notes."
 
@@ -8523,12 +8527,12 @@ describe("TOC source-path forwarding at the embed call sites", () => {
     onTestFinished(() => rm(dir, { recursive: true, force: true }))
     const dbPath = join(dir, "index.db")
 
-    const uniformEmbedder = {
+    const uniformEmbedder = stubEmbedder({
       embedText: vi.fn().mockResolvedValue(new Float32Array(384).fill(0.1)),
       embedBatch: vi.fn().mockImplementation((texts: string[]) => {
         return Promise.resolve(texts.map(() => new Float32Array(384).fill(0.1)))
       }),
-    }
+    })
     const forwardingIndex = createSearchIndex(dbPath, uniformEmbedder, undefined, {
       fileToolsEnabled: true,
     })
@@ -8603,5 +8607,102 @@ describe("TOC source-path forwarding at the embed call sites", () => {
       `data\nSection: Notes\n\n${notesContent}`,
       "Folder Alpha > data.csv\n\nMetrics\nNotes",
     ])
+  })
+})
+
+describe("search settings on a warm database", () => {
+  const createWarmDb = async (): Promise<string> => {
+    const dir = await mkdtemp(join(tmpdir(), "search-settings-"))
+    onTestFinished(() => rm(dir, { recursive: true, force: true }))
+    return join(dir, "search.db")
+  }
+  const tokenizerOf = (dbPath: string, table: string): string => {
+    const inspect = new Database(dbPath)
+    const row = inspect
+      .prepare<[string], { sql: string }>(`SELECT sql FROM sqlite_master WHERE name = ?`)
+      .get(table)
+    inspect.close()
+    const match = /tokenize='([^']+)'/.exec(row?.sql ?? "")
+
+    return match?.[1] ?? "(no table)"
+  }
+  const countRows = (dbPath: string, table: string): number => {
+    const inspect = new Database(dbPath)
+    sqliteVec.load(inspect)
+    const row = inspect.prepare<[], { n: number }>(`SELECT count(*) AS n FROM ${table}`).get()
+    inspect.close()
+
+    return row?.n ?? -1
+  }
+  const stubFor = (signature: string) =>
+    Object.assign(
+      stubEmbedder({
+        embedText: vi.fn().mockResolvedValue(new Float32Array(384).fill(0.1)),
+        embedBatch: vi.fn().mockImplementation((texts: string[]) => {
+          return Promise.resolve(texts.map(() => new Float32Array(384).fill(0.1)))
+        }),
+      }),
+      { signature },
+    )
+
+  it("creates the keyword tables with the configured tokenizer", async () => {
+    const dbPath = await createWarmDb()
+    createSearchIndex(dbPath, undefined, undefined, {
+      fileToolsEnabled: true,
+      ftsTokenizer: "unicode61 remove_diacritics 2",
+    })
+
+    expect([tokenizerOf(dbPath, "notes_fts"), tokenizerOf(dbPath, "file_content_fts")]).toEqual([
+      "unicode61 remove_diacritics 2",
+      "unicode61 remove_diacritics 2",
+    ])
+  })
+
+  it("recreates the keyword tables when the tokenizer changes, and keeps them otherwise", async () => {
+    const dbPath = await createWarmDb()
+    const first = createSearchIndex(dbPath, undefined, undefined, { fileToolsEnabled: true })
+    first.upsertNote({ filePath: "a.md", rawContent: "# Alpha\n", fileStat: testStat(1) }, logger)
+    createSearchIndex(dbPath, undefined, undefined, { fileToolsEnabled: true })
+
+    // The default tokenizer keeps the table and its rows.
+    expect(countRows(dbPath, "notes_fts")).toBe(1)
+
+    createSearchIndex(dbPath, undefined, undefined, {
+      fileToolsEnabled: true,
+      ftsTokenizer: "unicode61",
+    })
+
+    expect({
+      tokenizer: tokenizerOf(dbPath, "notes_fts"),
+      rows: countRows(dbPath, "notes_fts"),
+    }).toEqual({ tokenizer: "unicode61", rows: 0 })
+  })
+
+  it("drops the chunk and vector tables when the embedding signature changes", async () => {
+    const dbPath = await createWarmDb()
+    const first = createSearchIndex(dbPath, stubFor("model-a|384|"), undefined, {
+      fileToolsEnabled: true,
+    })
+    const sourceVersion = first.upsertNote(
+      { filePath: "a.md", rawContent: "# Alpha\n\nSome text.\n", fileStat: testStat(1) },
+      logger,
+    )
+    await first.embedNote(
+      { notePath: "a.md", rawContent: "# Alpha\n\nSome text.\n", sourceVersion },
+      logger,
+    )
+
+    expect(countRows(dbPath, "note_vectors")).toBe(1)
+
+    createSearchIndex(dbPath, stubFor("model-a|384|"), undefined, { fileToolsEnabled: true })
+
+    expect(countRows(dbPath, "note_vectors")).toBe(1)
+
+    createSearchIndex(dbPath, stubFor("model-b|384|"), undefined, { fileToolsEnabled: true })
+
+    expect({
+      chunks: countRows(dbPath, "note_chunks"),
+      vectors: countRows(dbPath, "note_vectors"),
+    }).toEqual({ chunks: 0, vectors: 0 })
   })
 })

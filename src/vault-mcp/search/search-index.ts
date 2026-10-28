@@ -16,7 +16,7 @@ import { parseMemoryEntries, type MemoryEntry } from "../obsidian-markdown/memor
 import { parseFrontmatterTags } from "../obsidian-markdown/tags.js"
 import { DEFAULT_STATUS_REGISTRY, tasks } from "../obsidian-markdown/tasks.js"
 import type { StatusClassification, TaskPriority, TaskStatus } from "../obsidian-markdown/tasks.js"
-import { contentHash, type Embedder } from "./embedder.js"
+import { contentHash, EMBEDDING_DIMENSIONS, type Embedder } from "./embedder.js"
 import type { Reranker } from "./reranker.js"
 import { buildChunkMetadataPrefix, chunkContent } from "./chunker.js"
 import { extractPdfText } from "../obsidian-markdown/pdf.js"
@@ -36,6 +36,7 @@ import {
 import { parseNoteSkippingUnreadableBlock } from "../obsidian-markdown/frontmatter.js"
 import * as queries from "./search-queries.js"
 import { hybridSearch } from "./hybrid-search.js"
+import { DEFAULT_FTS_TOKENIZER } from "./fts-query.js"
 
 // ── File content indexing constants ─────────────────────────────
 
@@ -357,6 +358,10 @@ export const createSearchIndex = (
      *  `statusRegistry`, so task writes classify with the same map the index
      *  did — a status-type change in the plugin needs a server restart. */
     statusRegistry?: ReadonlyMap<string, StatusClassification> | undefined
+    /** FTS5 tokenizer clause for the keyword tables (DEFAULT_FTS_TOKENIZER when
+     *  omitted). A warm database built with another clause has its keyword
+     *  tables dropped and recreated; rebuildFromVault repopulates them. */
+    ftsTokenizer?: string | undefined
     /** Query-time overrides for hybridSearch (file-leg RRF weight, reranker
      *  kind prefix — defaults in hybrid-search.ts) plus the index-time
      *  enrichChunkMetadata, which changes stored chunk text and re-embeds
@@ -368,6 +373,8 @@ export const createSearchIndex = (
   const memoryDir = options?.memoryDir
   const fileToolsEnabled = options?.fileToolsEnabled ?? false
   const statusRegistry = options?.statusRegistry ?? DEFAULT_STATUS_REGISTRY
+  const ftsTokenizer = options?.ftsTokenizer ?? DEFAULT_FTS_TOKENIZER
+  const vectorDimensions = embedder?.dimensions ?? EMBEDDING_DIMENSIONS
   const db = new Database(dbPath)
 
   /** Group by JavaScript's client spelling: String(1e-7) is "1e-7",
@@ -394,6 +401,46 @@ export const createSearchIndex = (
   // covered; a read-first wrap needs the .immediate() variant.
   db.pragma("busy_timeout = 5000")
   sqliteVec.load(db)
+
+  // Settings that shape the derived tables. A warm database built under other
+  // values holds rows this process can't use: FTS5 bakes the tokenizer into
+  // the table, and vectors from another embedding model (or width, or passage
+  // prefix) share no space with the current one. The stale tables are dropped
+  // here and recreated below; rebuildFromVault repopulates the keyword tables
+  // on every startup, and the embedding pass re-embeds chunks it can't find.
+  db.exec(`CREATE TABLE IF NOT EXISTS search_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
+  const readSettingStmt = db.prepare<[string], { value: string }>(
+    `SELECT value FROM search_settings WHERE key = ?`,
+  )
+  const writeSettingStmt = db.prepare<[string, string]>(
+    `INSERT INTO search_settings (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  )
+  const storedTokenizer = readSettingStmt.get("fts_tokenizer")?.value
+
+  if (storedTokenizer !== undefined && storedTokenizer !== ftsTokenizer) {
+    db.exec(`
+      DROP TABLE IF EXISTS notes_fts;
+      DROP TABLE IF EXISTS memory_entries_fts;
+      DROP TABLE IF EXISTS file_content_fts;
+    `)
+  }
+  writeSettingStmt.run("fts_tokenizer", ftsTokenizer)
+
+  if (embedder) {
+    const storedEmbedding = readSettingStmt.get("embedding_signature")?.value
+
+    if (storedEmbedding !== undefined && storedEmbedding !== embedder.signature) {
+      db.exec(`
+        DROP TABLE IF EXISTS note_vectors;
+        DROP TABLE IF EXISTS note_chunks;
+        DROP TABLE IF EXISTS file_content_vectors;
+        DROP TABLE IF EXISTS file_content_chunks;
+        DROP TABLE IF EXISTS memory_entry_vectors;
+      `)
+    }
+    writeSettingStmt.run("embedding_signature", embedder.signature)
+  }
 
   // FTS5 doesn't support ALTER TABLE ADD COLUMN. When opening a warm database
   // that lacks the metadata column, drop the table so the CREATE below rebuilds
@@ -422,7 +469,7 @@ export const createSearchIndex = (
     );
 
     CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
-      path UNINDEXED, title, content, metadata, tokenize='porter unicode61'
+      path UNINDEXED, title, content, metadata, tokenize='${ftsTokenizer}'
     );
 
     CREATE TABLE IF NOT EXISTS links (
@@ -506,7 +553,7 @@ export const createSearchIndex = (
 
       CREATE VIRTUAL TABLE IF NOT EXISTS note_vectors USING vec0(
         chunk_id  INTEGER PRIMARY KEY,
-        embedding float[384]
+        embedding float[${String(vectorDimensions)}]
       );
     `)
   }
@@ -535,7 +582,7 @@ export const createSearchIndex = (
       CREATE INDEX IF NOT EXISTS idx_memory_entries_file ON memory_entries(file);
 
       CREATE VIRTUAL TABLE IF NOT EXISTS memory_entries_fts USING fts5(
-        entry_id UNINDEXED, file UNINDEXED, section, entry_text, tokenize='porter unicode61'
+        entry_id UNINDEXED, file UNINDEXED, section, entry_text, tokenize='${ftsTokenizer}'
       );
     `)
     if (embedder) {
@@ -545,7 +592,7 @@ export const createSearchIndex = (
       db.exec(`
         CREATE VIRTUAL TABLE IF NOT EXISTS memory_entry_vectors USING vec0(
           entry_id  INTEGER PRIMARY KEY,
-          embedding float[384] distance_metric=cosine
+          embedding float[${String(vectorDimensions)}] distance_metric=cosine
         );
       `)
     }
@@ -566,7 +613,7 @@ export const createSearchIndex = (
       );
 
       CREATE VIRTUAL TABLE IF NOT EXISTS file_content_fts USING fts5(
-        path UNINDEXED, title, content, tokenize='porter unicode61'
+        path UNINDEXED, title, content, tokenize='${ftsTokenizer}'
       );
     `)
     if (embedder) {
@@ -583,7 +630,7 @@ export const createSearchIndex = (
 
         CREATE VIRTUAL TABLE IF NOT EXISTS file_content_vectors USING vec0(
           chunk_id  INTEGER PRIMARY KEY,
-          embedding float[384]
+          embedding float[${String(vectorDimensions)}]
         );
       `)
     }

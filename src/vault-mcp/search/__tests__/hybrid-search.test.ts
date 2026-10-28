@@ -3,6 +3,7 @@ import Database from "better-sqlite3"
 import { DateTime } from "luxon"
 import { createSearchIndex } from "../search-index.js"
 import { logger } from "../../../logger.js"
+import { stubEmbedder } from "./stub-embedder.js"
 
 const testStat = (mtimeMs: number, size = 100): { mtimeMs: number; size: number } => ({
   mtimeMs,
@@ -50,14 +51,15 @@ describe("hybridSearch", () => {
   /** Creates a mock embedder where all texts get the same embedding (distance 0
    *  between any two notes). For tests that need differentiated distances, override
    *  embedText after creation. */
-  const createHybridMockEmbedder = () => ({
-    embedText: vi.fn().mockResolvedValue(new Float32Array(EMBEDDING_DIMENSIONS).fill(0.1)),
-    embedBatch: vi
-      .fn()
-      .mockImplementation((texts: string[]) =>
-        Promise.resolve(texts.map(() => new Float32Array(EMBEDDING_DIMENSIONS).fill(0.1))),
-      ),
-  })
+  const createHybridMockEmbedder = () =>
+    stubEmbedder({
+      embedText: vi.fn().mockResolvedValue(new Float32Array(EMBEDDING_DIMENSIONS).fill(0.1)),
+      embedBatch: vi
+        .fn()
+        .mockImplementation((texts: string[]) =>
+          Promise.resolve(texts.map(() => new Float32Array(EMBEDDING_DIMENSIONS).fill(0.1))),
+        ),
+    })
 
   /** Generates a unique embedding by setting one dimension to 1.0 based on seed. */
   const seededEmbedding = (seed: number): Float32Array => {
@@ -1160,14 +1162,15 @@ This is a note with many words that should be truncated when using a small snipp
 describe("hybridSearch — file content vector search", () => {
   const EMBEDDING_DIMENSIONS = 384
 
-  const createHybridMockEmbedder = () => ({
-    embedText: vi.fn().mockResolvedValue(new Float32Array(EMBEDDING_DIMENSIONS).fill(0.1)),
-    embedBatch: vi
-      .fn()
-      .mockImplementation((texts: string[]) =>
-        Promise.resolve(texts.map(() => new Float32Array(EMBEDDING_DIMENSIONS).fill(0.1))),
-      ),
-  })
+  const createHybridMockEmbedder = () =>
+    stubEmbedder({
+      embedText: vi.fn().mockResolvedValue(new Float32Array(EMBEDDING_DIMENSIONS).fill(0.1)),
+      embedBatch: vi
+        .fn()
+        .mockImplementation((texts: string[]) =>
+          Promise.resolve(texts.map(() => new Float32Array(EMBEDDING_DIMENSIONS).fill(0.1))),
+        ),
+    })
 
   it("includes file content vector hits in hybrid results", async () => {
     const mockEmbedder = createHybridMockEmbedder()
@@ -1640,12 +1643,12 @@ describe("hybridSearch — folder-scoped vector candidate window", () => {
       embedding[text.includes("inside") ? 1 : 0] = 1.0
       return embedding
     }
-    return {
+    return stubEmbedder({
       embedText: vi.fn().mockImplementation((text: string) => Promise.resolve(axisFor(text))),
       embedBatch: vi
         .fn()
         .mockImplementation((texts: string[]) => Promise.resolve(texts.map(axisFor))),
-    }
+    })
   }
 
   it("returns an in-folder note that ranks below the vault-wide KNN window", async () => {
@@ -1739,12 +1742,13 @@ describe("hybridSearch — ranking tuning", () => {
 
   /** Uniform-embedding mock — every text embeds identically, so vector
    *  legs contribute rank without favoring any one item. */
-  const createHybridMockEmbedder = () => ({
-    embedText: vi.fn().mockResolvedValue(new Float32Array(EMBEDDING_DIMENSIONS).fill(0.1)),
-    embedBatch: vi.fn().mockImplementation((texts: string[]) => {
-      return Promise.resolve(texts.map(() => new Float32Array(EMBEDDING_DIMENSIONS).fill(0.1)))
-    }),
-  })
+  const createHybridMockEmbedder = () =>
+    stubEmbedder({
+      embedText: vi.fn().mockResolvedValue(new Float32Array(EMBEDDING_DIMENSIONS).fill(0.1)),
+      embedBatch: vi.fn().mockImplementation((texts: string[]) => {
+        return Promise.resolve(texts.map(() => new Float32Array(EMBEDDING_DIMENSIONS).fill(0.1)))
+      }),
+    })
 
   const NOTE_CONTENT =
     "---\ntitle: Career\ntags: [personal]\n---\n\nCareer goals and aspirations.\n"

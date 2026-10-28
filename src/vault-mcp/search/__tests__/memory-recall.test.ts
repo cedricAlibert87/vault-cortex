@@ -3,6 +3,7 @@ vi.mock("sqlite-vec", { spy: true })
 import { createSearchIndex } from "../search-index.js"
 import { sigmoid, type Reranker } from "../reranker.js"
 import { logger } from "../../../logger.js"
+import { stubEmbedder } from "./stub-embedder.js"
 
 const DIMENSIONS = 384
 
@@ -34,16 +35,17 @@ const topicSeedFor = (text: string): number => {
 }
 
 /** Content-aware mock embedder — same topic → identical vector. */
-const createTopicMockEmbedder = () => ({
-  embedText: vi
-    .fn()
-    .mockImplementation((text: string) => Promise.resolve(seededEmbedding(topicSeedFor(text)))),
-  embedBatch: vi
-    .fn()
-    .mockImplementation((texts: string[]) =>
-      Promise.resolve(texts.map((text) => seededEmbedding(topicSeedFor(text)))),
-    ),
-})
+const createTopicMockEmbedder = () =>
+  stubEmbedder({
+    embedText: vi
+      .fn()
+      .mockImplementation((text: string) => Promise.resolve(seededEmbedding(topicSeedFor(text)))),
+    embedBatch: vi
+      .fn()
+      .mockImplementation((texts: string[]) =>
+        Promise.resolve(texts.map((text) => seededEmbedding(topicSeedFor(text)))),
+      ),
+  })
 
 /** Mock cross-encoder: for an on-topic query, on-topic documents get a
  *  strongly positive logit and the "walk" entry sits above the adaptive
@@ -473,7 +475,7 @@ describe("memoryRecall", () => {
     // exactly and the fusion identifier decides the limit cut. Zzz is
     // upserted first to take the lower rowid; a rowid-keyed fusion would
     // return Zzz's entry.
-    const embedderFavoringZzz = {
+    const embedderFavoringZzz = stubEmbedder({
       embedText: vi
         .fn()
         .mockImplementation((text: string) =>
@@ -486,7 +488,7 @@ describe("memoryRecall", () => {
             texts.map((text) => seededEmbedding(text.includes("alpha-topic") ? 6 : 5)),
           ),
         ),
-    }
+    })
     const index = createSearchIndex(":memory:", embedderFavoringZzz, undefined, {
       memoryDir: "About Me",
     })
@@ -532,12 +534,12 @@ describe("memoryRecall", () => {
       if (text.toLowerCase().includes("pacing")) return queryAlignedEmbedding()
       return seededEmbedding(7)
     }
-    const tieEmbedder = {
+    const tieEmbedder = stubEmbedder({
       embedText: vi.fn().mockImplementation((text: string) => Promise.resolve(embeddingFor(text))),
       embedBatch: vi
         .fn()
         .mockImplementation((texts: string[]) => Promise.resolve(texts.map(embeddingFor))),
-    }
+    })
     const index = createSearchIndex(":memory:", tieEmbedder, undefined, {
       memoryDir: "About Me",
     })
