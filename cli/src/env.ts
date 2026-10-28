@@ -76,6 +76,23 @@ EMBEDDING_ENABLED=true
 # Only takes effect when EMBEDDING_ENABLED=true.
 RERANK_MODE=blended
 
+# Search models and tokenizer (defaults are the shipped English models).
+# For a vault written in another language, a multilingual embedding model
+# with the prefixes it expects, and a tokenizer without English stemming:
+#   EMBEDDING_MODEL=Xenova/multilingual-e5-small
+#   EMBEDDING_DIMENSIONS=384
+#   EMBEDDING_QUERY_PREFIX="query: "
+#   EMBEDDING_PASSAGE_PREFIX="passage: "
+#   FTS_TOKENIZER=unicode61 remove_diacritics 2
+# A change to the model, dimensions, passage prefix or tokenizer rebuilds the
+# affected index tables at the next start (re-embedding takes a few minutes).
+EMBEDDING_MODEL=Xenova/bge-small-en-v1.5
+EMBEDDING_DIMENSIONS=384
+EMBEDDING_QUERY_PREFIX=
+EMBEDDING_PASSAGE_PREFIX=
+RERANK_MODEL=Xenova/ms-marco-MiniLM-L-6-v2
+FTS_TOKENIZER=porter unicode61
+
 # Enable or disable the memory layer (default: true).
 # Set to false to hide memory tools and skip memory-folder creation.
 # MEMORY_DIR still supplies default protected folders and orphan exclusions when false.
@@ -217,6 +234,23 @@ EMBEDDING_ENABLED=true
 # "none" skips reranking for lower latency.
 # Only takes effect when EMBEDDING_ENABLED=true.
 RERANK_MODE=blended
+
+# Search models and tokenizer (defaults are the shipped English models).
+# For a vault written in another language, a multilingual embedding model
+# with the prefixes it expects, and a tokenizer without English stemming:
+#   EMBEDDING_MODEL=Xenova/multilingual-e5-small
+#   EMBEDDING_DIMENSIONS=384
+#   EMBEDDING_QUERY_PREFIX="query: "
+#   EMBEDDING_PASSAGE_PREFIX="passage: "
+#   FTS_TOKENIZER=unicode61 remove_diacritics 2
+# A change to the model, dimensions, passage prefix or tokenizer rebuilds the
+# affected index tables at the next start (re-embedding takes a few minutes).
+EMBEDDING_MODEL=Xenova/bge-small-en-v1.5
+EMBEDDING_DIMENSIONS=384
+EMBEDDING_QUERY_PREFIX=
+EMBEDDING_PASSAGE_PREFIX=
+RERANK_MODEL=Xenova/ms-marco-MiniLM-L-6-v2
+FTS_TOKENIZER=porter unicode61
 
 # Windows bind-mount mode (default: false).
 # Set to true when your vault is on a Windows drive (Docker Desktop).
