@@ -16,7 +16,12 @@ import { parseMemoryEntries, type MemoryEntry } from "../obsidian-markdown/memor
 import { parseFrontmatterTags } from "../obsidian-markdown/tags.js"
 import { DEFAULT_STATUS_REGISTRY, tasks } from "../obsidian-markdown/tasks.js"
 import type { StatusClassification, TaskPriority, TaskStatus } from "../obsidian-markdown/tasks.js"
-import { contentHash, EMBEDDING_DIMENSIONS, type Embedder } from "./embedder.js"
+import {
+  contentHash,
+  DEFAULT_EMBEDDING_SIGNATURE,
+  EMBEDDING_DIMENSIONS,
+  type Embedder,
+} from "./embedder.js"
 import type { Reranker } from "./reranker.js"
 import { buildChunkMetadataPrefix, chunkContent } from "./chunker.js"
 import { extractPdfText } from "../obsidian-markdown/pdf.js"
@@ -416,9 +421,11 @@ export const createSearchIndex = (
     `INSERT INTO search_settings (key, value) VALUES (?, ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
   )
-  const storedTokenizer = readSettingStmt.get("fts_tokenizer")?.value
+  // A database built before the settings were recorded holds tables made
+  // under the defaults, so an absent setting reads as the default value.
+  const storedTokenizer = readSettingStmt.get("fts_tokenizer")?.value ?? DEFAULT_FTS_TOKENIZER
 
-  if (storedTokenizer !== undefined && storedTokenizer !== ftsTokenizer) {
+  if (storedTokenizer !== ftsTokenizer) {
     db.exec(`
       DROP TABLE IF EXISTS notes_fts;
       DROP TABLE IF EXISTS memory_entries_fts;
@@ -428,9 +435,10 @@ export const createSearchIndex = (
   writeSettingStmt.run("fts_tokenizer", ftsTokenizer)
 
   if (embedder) {
-    const storedEmbedding = readSettingStmt.get("embedding_signature")?.value
+    const storedEmbedding =
+      readSettingStmt.get("embedding_signature")?.value ?? DEFAULT_EMBEDDING_SIGNATURE
 
-    if (storedEmbedding !== undefined && storedEmbedding !== embedder.signature) {
+    if (storedEmbedding !== embedder.signature) {
       db.exec(`
         DROP TABLE IF EXISTS note_vectors;
         DROP TABLE IF EXISTS note_chunks;

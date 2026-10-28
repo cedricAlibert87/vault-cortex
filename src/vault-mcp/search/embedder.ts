@@ -12,6 +12,10 @@ export const DEFAULT_EMBEDDING_MODEL = "Xenova/bge-small-en-v1.5"
 
 export const EMBEDDING_DIMENSIONS = 384
 
+/** Signature of vectors produced under the default settings — what a database
+ *  built before signatures were recorded holds. */
+export const DEFAULT_EMBEDDING_SIGNATURE = `${DEFAULT_EMBEDDING_MODEL}|${String(EMBEDDING_DIMENSIONS)}|`
+
 /** SHA-256 content hash — used to skip re-embedding unchanged chunks. */
 export const contentHash = (text: string): string => createHash("sha256").update(text).digest("hex")
 

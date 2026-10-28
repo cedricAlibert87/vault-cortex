@@ -68,9 +68,10 @@ describe("createEmbedder", () => {
       await embedder.embedText("un chunk")
       await embedder.embedQuery("une question")
       await embedder.embedBatch(["a", "b"])
-      const pipe = await mockedPipeline.mock.results[0]?.value
+      const pipe: ReturnType<typeof vi.fn> = await mockedPipeline.mock.results[0]?.value
+      const inputs = pipe.mock.calls.map((call: readonly unknown[]) => call[0])
 
-      expect(vi.mocked(pipe).mock.calls.map((call) => call[0])).toEqual([
+      expect(inputs).toEqual([
         "passage: un chunk",
         "query: une question",
         ["passage: a", "passage: b"],

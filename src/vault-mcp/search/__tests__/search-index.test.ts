@@ -8678,6 +8678,41 @@ describe("search settings on a warm database", () => {
     }).toEqual({ tokenizer: "unicode61", rows: 0 })
   })
 
+  it("treats a database without recorded settings as built with the defaults", async () => {
+    const dbPath = await createWarmDb()
+    const first = createSearchIndex(dbPath, stubFor("Xenova/bge-small-en-v1.5|384|"), undefined, {
+      fileToolsEnabled: true,
+    })
+    const sourceVersion = first.upsertNote(
+      { filePath: "a.md", rawContent: "# Alpha\n\nSome text.\n", fileStat: testStat(1) },
+      logger,
+    )
+    await first.embedNote(
+      { notePath: "a.md", rawContent: "# Alpha\n\nSome text.\n", sourceVersion },
+      logger,
+    )
+    // Simulate an index written before settings were recorded.
+    const legacy = new Database(dbPath)
+    legacy.exec("DROP TABLE search_settings")
+    legacy.close()
+
+    createSearchIndex(dbPath, stubFor("Xenova/bge-small-en-v1.5|384|"), undefined, {
+      fileToolsEnabled: true,
+    })
+
+    expect(countRows(dbPath, "note_vectors")).toBe(1)
+
+    createSearchIndex(dbPath, stubFor("other-model|384|passage: "), undefined, {
+      fileToolsEnabled: true,
+      ftsTokenizer: "unicode61",
+    })
+
+    expect({
+      vectors: countRows(dbPath, "note_vectors"),
+      tokenizer: tokenizerOf(dbPath, "notes_fts"),
+    }).toEqual({ vectors: 0, tokenizer: "unicode61" })
+  })
+
   it("drops the chunk and vector tables when the embedding signature changes", async () => {
     const dbPath = await createWarmDb()
     const first = createSearchIndex(dbPath, stubFor("model-a|384|"), undefined, {
